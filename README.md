@@ -31,48 +31,59 @@ camera / video ──► homography (4 clicked corners) ──► SAM 3 masks �
 
 | | |
 |---|---|
-| **GPU** | An **NVIDIA GPU with a working driver** (`nvidia-smi` must work). SAM 3 runs on CUDA only; there is no CPU fallback. |
-| **Python** | 3.10 – 3.12 (a conda environment is recommended) |
+| **GPU** | An **NVIDIA GPU with a working driver** (`nvidia-smi` must work). SAM 3 runs on CUDA only; there is no CPU fallback. CUDA 12.6 or newer. |
+| **Python** | **3.12 or newer** (a conda environment is recommended), as required by SAM 3. |
+| **PyTorch** | 2.7 or newer with CUDA support. |
 | **Model access** | The SAM 3 checkpoints are **gated** on Hugging Face. Request access to [`facebook/sam3`](https://huggingface.co/facebook/sam3) with your Hugging Face account and wait for approval *before* the first run. |
 | **Camera** (optional) | Intel RealSense (D4xx), any webcam, or an RTSP/HTTP stream. You can also just use a video file. |
 | **Disk** | A few GB for PyTorch and the SAM 3 checkpoint. |
 
-Where it was developed and tested:
-
-* **Linux**: Ubuntu, Python 3.12, PyTorch 2.7.0 + CUDA 12.6, NVIDIA RTX 3500 Ada laptop GPU.
-* **Windows**: Python 3.10, PyTorch 2.14.1 + CUDA 12.6 (the exact set pinned in `requirements.txt`).
-
-On the Linux machine above, one detection pass (both colours) takes about **0.25 s**, so the board updates about
-four times per second. The camera preview itself runs at full frame rate.
+Where it was developed and tested: Linux (Ubuntu), Python 3.12, PyTorch 2.7.0 + CUDA 12.6, SAM 3 installed from a
+clone of its repository with `pip install -e .`, NVIDIA RTX 3500 Ada laptop GPU. On that machine one detection pass
+(both colours) takes about **0.25 s**, so the board updates about four times per second. The camera preview itself
+runs at full frame rate. The Windows instructions follow the same steps but were not run on Windows by the
+maintainer.
 
 ## 2. Install on Linux
 
+The recommended way is to install SAM 3 exactly as described in its own repository
+(<https://github.com/facebookresearch/sam3#installation>) and then add this project's few extra dependencies.
+
 ```bash
-# 1. get the code
+# 1. get this project
 git clone https://github.com/JVanherck/dvdw-connect4.git
 cd dvdw-connect4
 
-# 2. create an environment
+# 2. create an environment (SAM 3 needs Python >= 3.12)
 conda create -n 4x4 python=3.12 -y
 conda activate 4x4
 
-# 3. install everything (PyTorch CUDA 12.6 wheels, OpenCV, Flask, SAM 3, ...)
-pip install -r requirements.txt
+# 3. PyTorch with CUDA (as in the SAM 3 instructions; 2.7+ with CUDA 12.6+ works, 2.7.0+cu126 was tested)
+pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu126
 
-# 4. log in to Hugging Face (needs approved access to facebook/sam3, see above)
+# 4. SAM 3: clone its repository and install it in editable mode
+git clone https://github.com/facebookresearch/sam3.git
+cd sam3
+pip install -e .
+cd ..
+
+# 5. the rest (OpenCV, Flask, RealSense, and imports SAM 3 does not declare)
+pip install -r requirements-app.txt
+
+# 6. log in to Hugging Face (needs approved access to facebook/sam3, see above)
 hf auth login            # older huggingface_hub versions: huggingface-cli login
 
-# 5. sanity check: must print True
+# 7. sanity check: must print True
 python -c "import torch; print(torch.cuda.is_available())"
 ```
 
 Notes:
 
-* `requirements.txt` pins `torch==2.14.1+cu126`. If you prefer another CUDA build, install a matching PyTorch
-  first from <https://pytorch.org/get-started/locally/>, then run `pip install -r requirements.txt`. SAM 3 needs
-  PyTorch 2.7 or newer.
-* `pip install -r requirements.txt` installs SAM 3 straight from GitHub
-  (`sam3 @ git+https://github.com/facebookresearch/sam3.git`), so you need `git` on your `PATH`.
+* The `sam3/` clone inside the project folder is fine (it is in `.gitignore`, and `connect4_reader.py` makes sure
+  it does not shadow the installed package). Cloning it somewhere else works just as well.
+* **Alternative, one step:** `pip install -r requirements.txt` installs PyTorch 2.14.1+cu126 *and* SAM 3 straight
+  from GitHub (`sam3 @ git+https://github.com/facebookresearch/sam3.git`) in one go. This route was **not**
+  verified on Linux, so if it gives you trouble use the steps above. It needs `git` on your `PATH`.
 * **RealSense on Linux:** `pyrealsense2` comes from pip, but to open the camera without `sudo` you need the udev
   rules. Either install `librealsense2-udev-rules` from Intel's apt repository
   ([instructions](https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md)) or copy
@@ -83,39 +94,49 @@ Notes:
 
 ## 3. Install on Windows
 
-Use **Anaconda/Miniconda Prompt** or PowerShell with conda available.
+Use **Anaconda/Miniconda Prompt** or PowerShell with conda available. Install the latest **NVIDIA driver** first;
+`nvidia-smi` must work in a terminal. You do *not* need to install the CUDA toolkit separately, the PyTorch wheels
+bundle the CUDA runtime. You also need **Git for Windows**.
 
 ```powershell
-# 1. get the code
+# 1. get this project
 git clone https://github.com/JVanherck/dvdw-connect4.git
 cd dvdw-connect4
 
-# 2. create an environment (Python 3.10 is what requirements.txt was tested with)
-conda create -n 4x4 python=3.10 -y
+# 2. create an environment (SAM 3 needs Python >= 3.12)
+conda create -n 4x4 python=3.12 -y
 conda activate 4x4
 
-# 3. install everything
-pip install -r requirements.txt
+# 3. PyTorch with CUDA (as in the SAM 3 instructions)
+pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu126
 
-# 4. log in to Hugging Face (needs approved access to facebook/sam3, see above)
+# 4. SAM 3: clone its repository and install it in editable mode
+git clone https://github.com/facebookresearch/sam3.git
+cd sam3
+pip install -e .
+cd ..
+
+# 5. the rest, plus triton (SAM 3 imports it; there is no official Windows wheel, so use triton-windows)
+pip install -r requirements-app.txt
+pip install triton-windows
+
+# 6. log in to Hugging Face (needs approved access to facebook/sam3, see above)
 hf auth login
 
-# 5. sanity check: must print True
+# 7. sanity check: must print True
 python -c "import torch; print(torch.cuda.is_available())"
 ```
 
 Notes:
 
-* Install the latest **NVIDIA driver** first; `nvidia-smi` must work in a terminal. You do *not* need to install the
-  CUDA toolkit separately, the PyTorch wheels bundle the CUDA runtime.
-* SAM 3 imports `triton`, which has no official Windows wheel. `requirements.txt` therefore installs
-  `triton-windows` automatically on Windows.
-* You need **Git for Windows** on your `PATH` (SAM 3 is installed from GitHub).
+* The one-step `pip install -r requirements.txt` (PyTorch + SAM 3 from GitHub + `triton-windows`) is the route the
+  original Windows setup used, with Python 3.10. SAM 3's own instructions ask for Python 3.12+, so the steps above
+  are the ones to follow.
 * If `torch.cuda.is_available()` prints `False`, you most likely got a CPU-only PyTorch build, see
   [Troubleshooting](#11-troubleshooting).
-* **RealSense on Windows:** `pip install pyrealsense2` (already in `requirements.txt`) is enough to open the camera.
-  Installing the [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense/releases) is optional but
-  useful for the Viewer to check that the camera works. Use a USB 3 port.
+* **RealSense on Windows:** `pip install pyrealsense2` (already in `requirements-app.txt`) is enough to open the
+  camera. Installing the [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense/releases) is optional
+  but useful for the Viewer to check that the camera works. Use a USB 3 port.
 * To read the API from PowerShell use `Invoke-RestMethod http://localhost:8000/state` (or `curl.exe`, not `curl`).
 * If another machine should reach the API, allow Python through the Windows firewall for port 8000.
 
@@ -266,7 +287,7 @@ python extract_bag.py recording.bag -o game.mp4
 
 **`Torch not compiled with CUDA enabled` / `torch.cuda.is_available()` is `False`**
 You have a CPU-only PyTorch. Remove it and reinstall the CUDA build:
-`pip uninstall -y torch torchvision && pip install -r requirements.txt`. Also check that `nvidia-smi` works.
+`pip uninstall -y torch torchvision`, then repeat the PyTorch step of the installation. Also check that `nvidia-smi` works.
 
 **`SAM3 needs CUDA, but torch … cannot see a GPU`**
 Same cause as above, or the NVIDIA driver is not loaded.
@@ -276,7 +297,7 @@ You have not been granted access to `facebook/sam3`, or you are not logged in. R
 then run `hf auth login`.
 
 **`ModuleNotFoundError: No module named 'pkg_resources'`**
-`setuptools` 82+ removed it. `pip install "setuptools<81"` (already pinned in `requirements.txt`).
+`setuptools` 82+ removed it. `pip install "setuptools<81"` (already pinned in `requirements-app.txt`).
 
 **NumPy errors / `numpy.core.multiarray failed to import`**
 SAM 3 needs `numpy<2` and OpenCV 4.10/4.11 matches it: `pip install "numpy<2" "opencv-python>=4.10,<4.12"`.
@@ -318,4 +339,5 @@ OpenCV needs a display. Calibrate locally, then run with `--no-display` and read
 |---|---|
 | `connect4_reader.py` | The application: camera input, calibration, SAM 3 detection, time filter, REST API, preview. |
 | `extract_bag.py` | Convert a RealSense `.bag` recording to mp4. |
-| `requirements.txt` | Python dependencies (PyTorch CUDA 12.6, OpenCV, Flask, SAM 3, …). |
+| `requirements-app.txt` | App dependencies (OpenCV, Flask, RealSense, …) to install after PyTorch and SAM 3. |
+| `requirements.txt` | One-step alternative that also installs PyTorch 2.14.1+cu126 and SAM 3 from GitHub (not verified on Linux). |
