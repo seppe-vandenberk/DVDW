@@ -24,8 +24,7 @@ camera / video ──► homography (4 clicked corners) ──► SAM 3 masks �
 7. [The REST API](#7-the-rest-api)
 8. [How the board is stabilised](#8-how-the-board-is-stabilised)
 9. [Command line options](#9-command-line-options)
-10. [Extracting video from a RealSense `.bag`](#10-extracting-video-from-a-realsense-bag)
-11. [Troubleshooting](#11-troubleshooting)
+10. [Troubleshooting](#10-troubleshooting)
 
 ## 1. Requirements
 
@@ -68,7 +67,7 @@ pip install -e .
 cd ..
 
 # 5. the rest (OpenCV, Flask, RealSense, and imports SAM 3 does not declare)
-pip install -r requirements-app.txt
+pip install -r requirements.txt
 
 # 6. log in to Hugging Face (needs approved access to facebook/sam3, see above)
 hf auth login            # older huggingface_hub versions: huggingface-cli login
@@ -81,9 +80,6 @@ Notes:
 
 * The `sam3/` clone inside the project folder is fine (it is in `.gitignore`, and `connect4_reader.py` makes sure
   it does not shadow the installed package). Cloning it somewhere else works just as well.
-* **Alternative, one step:** `pip install -r requirements.txt` installs PyTorch 2.14.1+cu126 *and* SAM 3 straight
-  from GitHub (`sam3 @ git+https://github.com/facebookresearch/sam3.git`) in one go. This route was **not**
-  verified on Linux, so if it gives you trouble use the steps above. It needs `git` on your `PATH`.
 * **RealSense on Linux:** `pyrealsense2` comes from pip, but to open the camera without `sudo` you need the udev
   rules. Either install `librealsense2-udev-rules` from Intel's apt repository
   ([instructions](https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md)) or copy
@@ -117,7 +113,7 @@ pip install -e .
 cd ..
 
 # 5. the rest, plus triton (SAM 3 imports it; there is no official Windows wheel, so use triton-windows)
-pip install -r requirements-app.txt
+pip install -r requirements.txt
 pip install triton-windows
 
 # 6. log in to Hugging Face (needs approved access to facebook/sam3, see above)
@@ -129,12 +125,9 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 Notes:
 
-* The one-step `pip install -r requirements.txt` (PyTorch + SAM 3 from GitHub + `triton-windows`) is the route the
-  original Windows setup used, with Python 3.10. SAM 3's own instructions ask for Python 3.12+, so the steps above
-  are the ones to follow.
 * If `torch.cuda.is_available()` prints `False`, you most likely got a CPU-only PyTorch build, see
-  [Troubleshooting](#11-troubleshooting).
-* **RealSense on Windows:** `pip install pyrealsense2` (already in `requirements-app.txt`) is enough to open the
+  [Troubleshooting](#10-troubleshooting).
+* **RealSense on Windows:** `pip install pyrealsense2` (already in `requirements.txt`) is enough to open the
   camera. Installing the [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense/releases) is optional
   but useful for the Viewer to check that the camera works. Use a USB 3 port.
 * To read the API from PowerShell use `Invoke-RestMethod http://localhost:8000/state` (or `curl.exe`, not `curl`).
@@ -273,17 +266,7 @@ Prompt tuning notes: on the test video the short prompts `red disc` / `blue disc
 variants ("dark blue disc", "teal disc", "blue game piece") found far fewer discs, and lowering `--confidence`
 to 0.08 produced many false detections (0.15 and 0.25 gave no improvement).
 
-## 10. Extracting video from a RealSense `.bag`
-
-`extract_bag.py` converts the colour stream of a RealSense recording to an mp4 that you can feed to
-`--video`:
-
-```bash
-python extract_bag.py recording.bag                 # writes recording.mp4
-python extract_bag.py recording.bag -o game.mp4
-```
-
-## 11. Troubleshooting
+## 10. Troubleshooting
 
 **`Torch not compiled with CUDA enabled` / `torch.cuda.is_available()` is `False`**
 You have a CPU-only PyTorch. Remove it and reinstall the CUDA build:
@@ -297,7 +280,7 @@ You have not been granted access to `facebook/sam3`, or you are not logged in. R
 then run `hf auth login`.
 
 **`ModuleNotFoundError: No module named 'pkg_resources'`**
-`setuptools` 82+ removed it. `pip install "setuptools<81"` (already pinned in `requirements-app.txt`).
+`setuptools` 82+ removed it. `pip install "setuptools<81"` (already pinned in `requirements.txt`).
 
 **NumPy errors / `numpy.core.multiarray failed to import`**
 SAM 3 needs `numpy<2` and OpenCV 4.10/4.11 matches it: `pip install "numpy<2" "opencv-python>=4.10,<4.12"`.
@@ -338,6 +321,4 @@ OpenCV needs a display. Calibrate locally, then run with `--no-display` and read
 | File | Purpose |
 |---|---|
 | `connect4_reader.py` | The application: camera input, calibration, SAM 3 detection, time filter, REST API, preview. |
-| `extract_bag.py` | Convert a RealSense `.bag` recording to mp4. |
-| `requirements-app.txt` | App dependencies (OpenCV, Flask, RealSense, …) to install after PyTorch and SAM 3. |
-| `requirements.txt` | One-step alternative that also installs PyTorch 2.14.1+cu126 and SAM 3 from GitHub (not verified on Linux). |
+| `requirements.txt` | App dependencies (OpenCV, Flask, RealSense, …) to install after PyTorch and SAM 3. |
