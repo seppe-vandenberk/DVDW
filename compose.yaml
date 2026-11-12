@@ -1,0 +1,66 @@
+name: connect4
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
+    environment:
+      DQN_DEVICE: ${DQN_DEVICE:-cpu}
+      MODEL_DIR: /app/models
+      AI_BACKEND: ${AI_BACKEND:-az}
+      AI_BACKGROUND: ${AI_BACKGROUND:-true}
+      AI_SEARCH_SIMULATIONS: ${AI_SEARCH_SIMULATIONS:-64}
+      AI_TRAIN_SIMULATIONS: ${AI_TRAIN_SIMULATIONS:-32}
+      AI_BATCH_GAMES: ${AI_BATCH_GAMES:-16}
+      AI_EVALUATION_SECONDS: ${AI_EVALUATION_SECONDS:-300}
+      AI_GATE_GAMES: ${AI_GATE_GAMES:-40}
+    volumes:
+      - ./models:/app/models
+    restart: unless-stopped
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  simulator:
+    build:
+      context: .
+      target: simulator
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${VIEWER_PORT:-8080}:8080"
+    environment:
+      API_URL: http://api:8000
+      CAMERA_API_URL: ${CAMERA_API_URL:-}
+      EVENT_SCORE_FILE: /app/event-data/robot_scores.txt
+      MODEL_ONE: ${MODEL_ONE:-shared}
+      MODEL_TWO: ${MODEL_TWO:-rules}
+      SIM_SWAP_SIDES: ${SIM_SWAP_SIDES:-true}
+      SIM_INTERVAL: ${SIM_INTERVAL:-0.25}
+      SIM_RESULT_DELAY: ${SIM_RESULT_DELAY:-0.0001}
+    volumes:
+      - ./runtime/event:/app/event-data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

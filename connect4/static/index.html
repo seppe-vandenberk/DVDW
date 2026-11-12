@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Connect Four · Live training</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/viewer.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand"><span class="logo" aria-hidden="true">••<br>••</span><span>CONNECT FOUR <small>TRAINING LAB</small></span></div>
+      <a href="/debug" style="margin-left:auto;margin-right:20px">Open debug console →</a>
+      <a href="/explain" style="margin-right:20px">How the AI works</a>
+      <span id="connection" class="badge"><i></i> Connecting</span>
+    </header>
+    <section class="heading">
+      <p class="eyebrow">LIVE SIMULATION</p>
+      <h1>One board. A learning AI.</h1>
+      <p class="intro">Play the published AI while it learns in the background. Open the debug console to follow training and model publication.</p>
+      <div class="mode-controls" role="group" aria-label="Game mode">
+        <button id="simulation-mode" type="button" aria-pressed="true">Watch simulation</button>
+        <button id="human-mode" type="button" aria-pressed="false">Play as human</button>
+        <button id="new-game" type="button" hidden>New game</button>
+        <button id="retry-bot" type="button" hidden>Retry bot action</button>
+      </div>
+      <p id="mode-note" class="note">Background learning is independent of the displayed exhibition game.</p>
+      <p id="control-error" class="error" role="alert" hidden></p>
+    </section>
+    <section class="panel simulation-settings" aria-labelledby="simulation-settings-title">
+      <h2 id="simulation-settings-title">Simulation configuration</h2>
+      <form id="simulation-config">
+        <label class="swap-option"><input id="config-round-robin" type="checkbox"> Three-player round robin</label>
+        <label class="swap-option"><input id="config-curriculum" type="checkbox" checked> Gradually strengthen the training rule player</label>
+        <p class="note">Starts with 50% random moves. Rule strength increases with the last five benchmark scores, reaching full strength at 60% score. The benchmark always uses full-strength rules.</p>
+        <div class="settings-players">
+          <fieldset>
+            <legend>Player one</legend>
+            <label for="config-player-one">Player type</label>
+            <select id="config-player-one"><option value="ai">Learning AI</option><option value="rules">Rule-based opponent</option></select>
+            <label id="config-model-one-label" for="config-model-one">AI model name
+              <input id="config-model-one" value="shared" required pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" autocomplete="off">
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Player two</legend>
+            <label for="config-player-two">Player type</label>
+            <select id="config-player-two"><option value="ai">Learning AI</option><option value="rules" selected>Rule-based opponent</option></select>
+            <label id="config-model-two-label" for="config-model-two" hidden>AI model name
+              <input id="config-model-two" value="shared" required pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" autocomplete="off" disabled>
+            </label>
+          </fieldset>
+          <fieldset id="config-third-player" hidden>
+            <legend>Player three</legend>
+            <label for="config-player-three">Player type</label>
+            <select id="config-player-three"><option value="ai">Learning AI</option><option value="rules">Rule-based opponent</option></select>
+            <label id="config-model-three-label" for="config-model-three">AI model name
+              <input id="config-model-three" value="shared" required pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" autocomplete="off" disabled>
+            </label>
+          </fieldset>
+        </div>
+        <div class="settings-bottom">
+          <label class="swap-option"><input id="config-swap-sides" type="checkbox" checked> Swap players after each game</label>
+          <button id="apply-simulation-config" type="submit">Apply configuration</button>
+        </div>
+        <p id="config-summary" class="note" role="status">AI · shared vs rule-based opponent. Switching is on.</p>
+        <p id="rotation-status" class="note" role="status" hidden></p>
+        <p class="note">Round robin uses three player entries, with at most one rule player. Two AI entries can share the same model name and learned weights. Each pair plays 15 completed games, then the pairing changes. All three pairings play once per shuffled round. With switching off, the earlier selected player starts.</p>
+        <p class="note">Applying starts a fresh simulation game and keeps learned progress. Use the same AI model name on both sides to train shared weights, or different names for separate AIs. With switching off, the selected sides stay fixed.</p>
+      </form>
+    </section>
+    <div class="layout">
+      <section class="game panel" aria-label="Live simulator board">
+        <div class="game-top"><span id="game-number">Waiting for a game</span><span id="move-number">Move 0 / 35</span></div>
+        <div class="players">
+          <div id="player-one" class="player"><span class="disk yellow"></span><div><b>Player 1</b><span id="model-one">shared</span></div><span class="turn">TURN</span></div>
+          <span class="versus">vs</span>
+          <div id="player-two" class="player"><span class="disk red"></span><div><b>Player −1</b><span id="model-two">Rule-based opponent</span></div><span class="turn">TURN</span></div>
+        </div>
+        <div class="board-wrap">
+          <div class="columns" role="group" aria-label="Drop a yellow disc in a column"></div>
+          <div id="board" class="board" role="img" aria-label="Empty seven-column, five-row board"></div>
+        </div>
+        <div class="game-bottom"><span id="game-status" role="status">Waiting for the simulator…</span><span id="last-move">—</span></div>
+        <p id="move-reason" class="note" role="status"></p>
+        <p id="error" class="error" hidden></p>
+      </section>
+      <aside>
+        <section class="panel training">
+          <div class="section-title"><h2>Training pulse</h2><span id="device" class="chip">—</span></div>
+          <div class="big-stat"><strong id="updates">0</strong><span>optimizer updates</span></div>
+          <dl class="metrics">
+            <div><dt>Experience replay</dt><dd id="replay">0 <small>/ 20,000</small></dd></div>
+            <div><dt>Exploration</dt><dd id="epsilon">—</dd></div>
+            <div><dt>Training loss</dt><dd id="loss">Warming up</dd></div>
+            <div><dt>Reward-prediction loss</dt><dd id="td-loss">Warming up</dd></div>
+            <div><dt>Tactical margin loss</dt><dd id="tactical-loss">Warming up</dd></div>
+            <div><dt>Sampled Q range</dt><dd id="q-range">Waiting</dd></div>
+            <div><dt>Training rule strength</dt><dd id="rule-strength">50%</dd></div>
+            <div><dt>API interruptions</dt><dd id="api-errors">0</dd></div>
+            <div><dt>Move interval</dt><dd id="interval">0s</dd></div>
+            <div><dt>Last model</dt><dd id="last-model">—</dd></div>
+          </dl>
+          <p id="training-warning" class="error" role="status" hidden></p>
+          <p class="note" id="reward-note">Search learning uses win +1, draw 0, loss −1, discounted by 0.997 per ply. Background practice continues during human play. Confirmed human outcomes enter replay after /finish.</p>
+        </section>
+        <section class="panel results">
+          <div class="section-title"><h2>This session</h2><span id="games" class="muted">0 games</span></div>
+          <div class="scores"><div><span class="score-label"><i class="yellow"></i>Player 1</span><strong id="wins-one">0</strong></div><div><span class="score-label">Draws</span><strong id="draws">0</strong></div><div><span class="score-label"><i class="red"></i>Player −1</span><strong id="wins-two">0</strong></div></div>
+          <p class="note">Results are grouped by color, including human games. Players swap colors when switching is enabled. Session scores reset on restart.</p>
+          <h3>Matchup results</h3>
+          <div id="matchup-matrix" class="matchup-matrix"></div>
+          <p class="note">Each cell: first-player wins / draws / second-player wins. Simulation only, grouped by model name; shared AI entries count together. Resets when applying configuration or restarting.</p>
+        </section>
+      </aside>
+    </div>
+    <section class="panel progress-panel" aria-labelledby="progress-title">
+      <div class="progress-heading">
+        <div><h2 id="progress-title">Learning progress</h2><p class="note">Strength against the rule-based opponent. Higher score is better; fewer discs per win is faster.</p></div>
+        <div class="progress-actions">
+          <div class="exploration-presets" role="group" aria-label="Reset exploration rate">
+            <span>Reset exploration:</span>
+            <button id="reset-exploration-25" type="button" data-exploration-rate="0.25" aria-label="Reset exploration to 25%">25%</button>
+            <button id="reset-exploration-50" type="button" data-exploration-rate="0.5" aria-label="Reset exploration to 50%">50%</button>
+            <button id="reset-exploration-75" type="button" data-exploration-rate="0.75" aria-label="Reset exploration to 75%">75%</button>
+            <button id="reset-exploration" type="button" data-exploration-rate="1" aria-label="Reset exploration to 100%">100%</button>
+          </div>
+          <button id="measure-progress" type="button">Measure now</button>
+        </div>
+      </div>
+      <p id="progress-message" class="note" role="status">Measuring the starting strength of each model…</p>
+      <div id="progress-models" class="progress-models"></div>
+      <p class="note">Score = (wins + half the draws) / games. Search learning checks 20 games against the rule opponent, equally as each color, with fixed opening seeds. Candidate checks run in the background about every five minutes; a separate match against the published model decides whether to publish new weights. The chart includes candidates that were not published. Human play uses the published model while training continues. These samples measure progress, not proof of unbeatable play. Legacy DQN checks use 50 games every 250 updates.</p>
+    </section>
+    <footer><span><i class="footer-dot"></i> Training lab · updates live</span><span id="game-id">No active game</span></footer>
+  </main>
+</body>
+</html>

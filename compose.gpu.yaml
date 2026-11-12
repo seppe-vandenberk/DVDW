@@ -1,0 +1,5 @@
+services:
+  api:
+    gpus: all
+    environment:
+      DQN_DEVICE: cuda

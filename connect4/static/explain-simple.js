@@ -1,0 +1,5 @@
+"use strict";
+function updateReward(){const moves=Number(document.getElementById("reward-distance").value),value=0.997**moves;document.getElementById("reward-plies").textContent=moves;document.getElementById("reward-win-label").textContent=`Win: +${value.toFixed(3)}`;document.getElementById("reward-loss-label").textContent=`Loss: −${value.toFixed(3)}`;}
+document.getElementById("reward-distance").addEventListener("input",updateReward);updateReward();
+async function liveModel(){try{const response=await fetch("/debug/data?model=shared",{cache:"no-store"});if(!response.ok)throw new Error("Unavailable");const data=await response.json();document.getElementById("live-model").textContent=`Live: you can play version ${data.published.generation}. ${data.background.running&&!data.background.pause_requested?"Its practice copy is learning in the background.":"Background practice is paused or stopped."}`;}catch{document.getElementById("live-model").textContent="Live status unavailable. You can still read how it works here.";}}
+liveModel();
