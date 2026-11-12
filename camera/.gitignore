@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+# local SAM 3 clone (installed from GitHub via requirements.txt)
+sam3/
+# recordings
+*.mp4
+*.bag
+*.avi
+# camera-specific calibration, created on first run
+calibration.json
