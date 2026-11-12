@@ -4,6 +4,24 @@ A STEM-day demonstration of learning through repetition and rewards, on a **7-co
 
 Background learning continues during browser and physical human games. The home page is a focused Play screen using the same design and navigation as the operator console. Training observation, candidate benchmark scores, publication results, and a sampled live background-training board live in the debug console.
 
+## Install
+
+The repository has two parts with **separate environments**; install only what you need.
+
+| Part | Needs | Install |
+|---|---|---|
+| Model API + viewer (root, `connect4/`) | Docker, **or** Python 3.12 + `pip install -r requirements.txt` in `.venv` | `docker compose up --build -d`, or see [Run](#run) |
+| Camera reader (`camera/`, optional, needs an NVIDIA GPU) | conda env with Python 3.12, PyTorch + CUDA, SAM 3, access to `facebook/sam3` on Hugging Face | [camera/README.md](camera/README.md#2-install-on-linux) (Linux) or [Windows](camera/README.md#3-install-on-windows) |
+
+```powershell
+git clone https://github.com/seppe-vandenberk/DVDW.git
+cd DVDW
+python -m venv .venv                                   # model API + viewer without Docker
+.\.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+The camera reader pins `numpy<2` and its own dependencies, so keep it in its own conda environment (`camera/requirements.txt`) and do not install it into `.venv`. Without a camera you can skip it completely and use the mock camera. Running everything together is described in [Run the whole system](#run-the-whole-system).
+
 ## Run
 
 ```powershell

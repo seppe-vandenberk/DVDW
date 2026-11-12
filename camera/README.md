@@ -1,4 +1,6 @@
-# dvdw-connect4
+# DVDW camera reader (`camera/`)
+
+This folder is part of the [DVDW](../README.md) repository (formerly the separate `dvdw-connect4` project). All commands below are run from this `camera/` folder. For the full system use `--rows 5 --port 8001`, see [Camera reader](../README.md#camera-reader-camera) in the main README.
 
 Reads a physical **Connect Four** board from a camera (Intel RealSense, any webcam, a network stream) or from a
 recorded video, and serves the current position as a tiny JSON API.
@@ -49,9 +51,9 @@ The recommended way is to install SAM 3 exactly as described in its own reposito
 (<https://github.com/facebookresearch/sam3#installation>) and then add this project's few extra dependencies.
 
 ```bash
-# 1. get this project
-git clone https://github.com/JVanherck/dvdw-connect4.git
-cd dvdw-connect4
+# 1. get the DVDW repository (skip the clone if you already have it) and enter this folder
+git clone https://github.com/seppe-vandenberk/DVDW.git
+cd DVDW/camera
 
 # 2. create an environment (SAM 3 needs Python >= 3.12)
 conda create -n 4x4 python=3.12 -y
@@ -95,9 +97,9 @@ Use **Anaconda/Miniconda Prompt** or PowerShell with conda available. Install th
 bundle the CUDA runtime. You also need **Git for Windows**.
 
 ```powershell
-# 1. get this project
-git clone https://github.com/JVanherck/dvdw-connect4.git
-cd dvdw-connect4
+# 1. get the DVDW repository (skip the clone if you already have it) and enter this folder
+git clone https://github.com/seppe-vandenberk/DVDW.git
+cd DVDW/camera
 
 # 2. create an environment (SAM 3 needs Python >= 3.12)
 conda create -n 4x4 python=3.12 -y
@@ -142,7 +144,7 @@ The default board is the standard **7 columns × 6 rows**; use `--rows` / `--col
 # a recorded video (loops when it ends, plays in real time)
 python connect4_reader.py --video my_game.mp4
 
-# a 7x5 board
+# a 7x5 board (what the DVDW event uses)
 python connect4_reader.py --video my_game.mp4 --rows 5
 
 # a live Intel RealSense camera (default when no source is given)
