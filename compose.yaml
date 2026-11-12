@@ -49,6 +49,8 @@ services:
       SIM_RESULT_DELAY: ${SIM_RESULT_DELAY:-0.0001}
     volumes:
       - ./runtime/event:/app/event-data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach the camera reader running on the host
     depends_on:
       api:
         condition: service_healthy

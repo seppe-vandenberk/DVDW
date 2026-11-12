@@ -481,7 +481,7 @@ def main():
     ap.add_argument("--reset-seconds", type=float, default=5.0, help="no discs detected for this long = game restarted, clear the board")
     ap.add_argument("--hide-masks", action="store_true", help="start with the SAM mask overlay off (toggle with m)")
     ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--no-display", action="store_true", help="skip the preview window (needs saved calibration)")
     args = ap.parse_args()
     ROWS, COLS = args.rows, args.cols

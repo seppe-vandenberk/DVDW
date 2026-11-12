@@ -130,8 +130,8 @@ Notes:
 * **RealSense on Windows:** `pip install pyrealsense2` (already in `requirements.txt`) is enough to open the
   camera. Installing the [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense/releases) is optional
   but useful for the Viewer to check that the camera works. Use a USB 3 port.
-* To read the API from PowerShell use `Invoke-RestMethod http://localhost:8000/state` (or `curl.exe`, not `curl`).
-* If another machine should reach the API, allow Python through the Windows firewall for port 8000.
+* To read the API from PowerShell use `Invoke-RestMethod http://localhost:8001/state` (or `curl.exe`, not `curl`).
+* If another machine should reach the API, allow Python through the Windows firewall for port 8001.
 
 ## 4. Run
 
@@ -160,7 +160,7 @@ The first start takes a while because SAM 3 and its checkpoint are loaded (the A
 `valid: false` until the model is ready). Then query it:
 
 ```bash
-curl http://localhost:8000/state
+curl http://localhost:8001/state
 ```
 
 Press `q` or `Esc` in the preview window to quit (or `Ctrl+C` in the terminal when running with `--no-display`).
@@ -200,7 +200,7 @@ Start without the overlay with `--hide-masks`.
 
 ## 7. The REST API
 
-`GET http://<host>:8000/state` returns:
+`GET http://<host>:8001/state` returns:
 
 ```json
 {
@@ -225,7 +225,7 @@ Start without the overlay with `--hide-masks`.
 | `game_id` | Starts at 1 and increases every time a new game is detected (see below). |
 
 While the model is still loading you get `valid: false`, `timestamp: null` and an empty board.
-The server listens on `0.0.0.0:8000` by default (`--host`, `--port`).
+The server listens on `0.0.0.0:8001` by default (`--host`, `--port`).
 
 ## 8. How the board is stabilised
 
@@ -260,7 +260,7 @@ random model dropout can make a disc vanish for a few frames. The tracker (`Boar
 | `--reset-seconds` | `5.0` | No discs detected for this long means a new game: clear the board. |
 | `--hide-masks` | off | Start with the mask overlay off (toggle with `m`). |
 | `--no-display` | off | No preview window. Needs an existing calibration file. |
-| `--host`, `--port` | `0.0.0.0`, `8000` | Address of the REST API. |
+| `--host`, `--port` | `0.0.0.0`, `8001` | Address of the REST API. |
 
 Prompt tuning notes: on the test video the short prompts `red disc` / `blue disc` worked best. Descriptive
 variants ("dark blue disc", "teal disc", "blue game piece") found far fewer discs, and lowering `--confidence`
@@ -311,7 +311,7 @@ the holes. Reduce reflections and make sure the whole board is lit evenly. `--mi
 can be tuned, but the temporal filter already removes most one-off errors.
 
 **`Address already in use`**
-Another instance is still running. Stop it or use `--port 8001`.
+Another instance is still running. Stop it or use `--port 8002`.
 
 **Preview window does not open on a remote Linux machine**
 OpenCV needs a display. Calibrate locally, then run with `--no-display` and read the API.

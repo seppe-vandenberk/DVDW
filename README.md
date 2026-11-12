@@ -13,7 +13,8 @@ docker compose up --build -d
 - Viewer: http://localhost:8080
 - STEM participant display: http://localhost:8080/participant
 - STEM instructor display: http://localhost:8080/instructor
-- Camera API / documentation: http://localhost:8000/docs
+- Model API / documentation: http://localhost:8000/docs
+- Camera reader state (only when `camera/` is running): http://localhost:8001/state
 - Worker status: http://localhost:8000/health
 - Quick overview (advanced tools under More details): http://localhost:8080/debug
 - Illustrated model explanation: http://localhost:8080/explain
@@ -152,7 +153,7 @@ Open `/participant` on the participant screen and `/instructor` on the instructo
 
 The instructor selects a robot character, a human character, the robot's blue (`B`) or red (`R`) discs, and who starts. The other color is assigned to the human. Start new game applies these selections and clears the shared event game. Character selections are decorative; player numbers are assigned by turn order for the existing model API. The original browser Play game remains at `/`.
 
-One server-owned loop reads the camera every two seconds, independently of open browser tabs. Blank `CAMERA_API_URL` selects the shared mock camera, exposed at `GET /event/camera/mock`. The instructor can load/edit/send its response. This is row-major: five rows of seven `X`, `B`, or `R` cells, plus `game_id`, an ISO-8601 `timestamp`, and `valid`. The mock endpoint refreshes the timestamp when read; the editor refreshes it when sending. Set `CAMERA_API_URL` to an external camera's GET endpoint when ready (also passed through Docker Compose). External timestamps must be within ten seconds of server time; invalid, stale, floating, and impossible boards are rejected and reported.
+One server-owned loop reads the camera every two seconds, independently of open browser tabs. Blank `CAMERA_API_URL` selects the shared mock camera, exposed at `GET /event/camera/mock`. The instructor can load/edit/send its response. This is row-major: five rows of seven `X`, `B`, or `R` cells, plus `game_id`, an ISO-8601 `timestamp`, and `valid`. The mock endpoint refreshes the timestamp when read; the editor refreshes it when sending. Set `CAMERA_API_URL` to the camera reader's endpoint when ready (see [Camera reader](#camera-reader-camera) below) (also passed through Docker Compose). External timestamps must be within ten seconds of server time; invalid, stale, floating, and impossible boards are rejected and reported.
 
 A changed, valid board starts a model request only on the robot's turn. Timestamps alone never trigger another request or restart its animation. The robot thinks for a minimum of one second, rising linearly to three seconds as the board fills, and longer if inference is still running. It carries a disc to the selected slot, then lights that slot. This is a placement instruction: a suggested disc is never silently added to the observed board, and no hardware command is sent. Confirm the robot disc and human reply through camera observations.
 
@@ -173,3 +174,71 @@ Scores are plain text: one `+1`, `-1`, or `0` per game. Saves replace the file a
 
 Instructor **Bordbreedte aanpassen** opens the width editor (50-175%, smaller/larger and reset). It updates the participant board, slots, and robot rail together, and survives New game within the running service. Confirmed human and robot placements, including manual controls, animate falling discs; unchanged polling snapshots do not replay them. Reduced-motion preferences suppress this animation.
 "# DVDW" 
+
+
+## Camera reader (`camera/`)
+
+[camera/](camera/) is the former `dvdw-connect4` project (history preserved). It reads the physical board with a camera or video using SAM 3 and serves it at `GET /state`. That is exactly what `CAMERA_API_URL` consumes: `board` (5 rows x 7 `X`/`R`/`B`, row 0 on top), `game_id`, `timestamp`, `valid`. It needs an NVIDIA GPU and runs **on the host, not in Docker**. Installation, calibration and all options are in [camera/README.md](camera/README.md).
+
+```
+camera/video -> camera/connect4_reader.py (:8001 /state) -> simulator (:8080, polls CAMERA_API_URL) -> model API (:8000 /move)
+```
+
+| Component | Folder | Port | Runs in |
+|---|---|---|---|
+| Model API (learning, `/move`) | `connect4/api.py` | 8000 | Docker or host |
+| Viewer / STEM displays | `connect4/simulation_service.py` | 8080 | Docker or host |
+| Camera reader | `camera/connect4_reader.py` | 8001 | host (GPU) |
+
+### Run the whole system
+
+**One-time setup:** install the camera reader following [camera/README.md](camera/README.md) (conda env, PyTorch + CUDA, SAM 3, `pip install -r camera/requirements.txt`, Hugging Face login). Docker is only needed for the model API and viewer.
+
+**1. Start the camera reader** (own terminal, conda env active). The event board has 5 rows, so `--rows 5` is required:
+
+```powershell
+python camera/connect4_reader.py --rows 5 --port 8001                 # RealSense camera (calibrate on first run)
+python camera/connect4_reader.py --rows 5 --port 8001 --camera 0      # webcam
+python camera/connect4_reader.py --rows 5 --port 8001 --video game.mp4   # recorded video
+```
+
+Check it with `Invoke-RestMethod http://localhost:8001/state` (`valid` stays `false` until SAM 3 has loaded).
+
+**2. Point the viewer at it.** Copy `.env.example` to `.env` and set:
+
+```
+CAMERA_API_URL=http://host.docker.internal:8001/state
+```
+
+**3. Start the model API and viewer:**
+
+```powershell
+docker compose up --build -d            # add  -f compose.gpu.yaml  for NVIDIA GPU training
+```
+
+**4. Open the displays:** instructor http://localhost:8080/instructor (should say "External camera" and show the camera as connected), participant http://localhost:8080/participant.
+
+**Without Docker** (three terminals, from this folder):
+
+```powershell
+# terminal 1: model API
+$env:AI_BACKEND = "az"; $env:DQN_DEVICE = "cpu"
+.\.venv\Scripts\python -m uvicorn connect4.api:app --host 127.0.0.1 --port 8000 --workers 1
+# terminal 2: viewer, using the camera reader
+$env:CAMERA_API_URL = "http://127.0.0.1:8001/state"
+.\.venv\Scripts\python -m uvicorn connect4.simulation_service:app --host 127.0.0.1 --port 8080 --workers 1
+# terminal 3: camera reader (conda env)
+python camera/connect4_reader.py --rows 5 --port 8001
+```
+
+**Without a camera:** leave `CAMERA_API_URL` blank. The viewer then uses the built-in mock camera that the instructor page can edit.
+
+**Stop:** `docker compose down`, then Ctrl+C (or `q`/`Esc` in the preview window) for the camera reader.
+
+### Troubleshooting the connection
+
+- *Camera shows as unavailable on the instructor page:* open the `/state` URL in a browser; `valid` must be `true`. An invalid board (floating discs, wrong disc counts), a stale timestamp (clocks more than 10 s apart) or a board that is not 5x7 is rejected, and the reason is shown next to the camera status.
+- *Board has 6 rows:* the reader was started without `--rows 5`.
+- *Port 8000 already in use:* the camera reader must use 8001 (its default); 8000 belongs to the model API.
+- *Docker cannot reach the reader:* use `host.docker.internal` (configured in `compose.yaml`), and allow Python through the Windows firewall for port 8001.
+- Calibrate again whenever the camera or the board is moved (`--recalibrate`).
