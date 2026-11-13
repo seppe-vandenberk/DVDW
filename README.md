@@ -198,6 +198,8 @@ Instructor **Bordbreedte aanpassen** opens the width editor (50-175%, smaller/la
 
 [camera/](camera/) is the former `dvdw-connect4` project (history preserved). It reads the physical board with a camera or video using SAM 3 and serves it at `GET /state`. That is exactly what `CAMERA_API_URL` consumes: `board` (5 rows x 7 `X`/`R`/`B`, row 0 on top), `game_id`, `timestamp`, `valid`. It needs an NVIDIA GPU and runs **on the host, not in Docker**. Installation, calibration and all options are in [camera/README.md](camera/README.md).
 
+With a **RealSense** the reader also uses the depth stream: detections behind the board (a person or poster seen through an empty hole) or in front of it (a hand) are discarded, and SAM detections are verified by colour, so red/blue discs are read consistently. Webcam, stream and video sources work as before without depth. Details and tuning options (`--depth-behind`, `--depth-front`, `--no-depth`) are in [camera/README.md](camera/README.md#8a-depth-filter-realsense-only).
+
 ```
 camera/video -> camera/connect4_reader.py (:8001 /state) -> simulator (:8080, polls CAMERA_API_URL) -> model API (:8000 /move)
 ```
