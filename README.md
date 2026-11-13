@@ -192,7 +192,8 @@ detections, you can watch the filter ignore hands, falling discs and dropouts.
 
 | Key | Action |
 |---|---|
-| `m` | toggle the mask overlay |
+| `m` | toggle the mask overlay (magenta outlines = detected by SAM but rejected by the depth filter) |
+| `d` | toggle the per-cell depth numbers (fraction of the hole that depth says is filled) |
 | `q` / `Esc` | quit |
 
 The text in the top-left corner shows `valid` or the reason the current board is physically impossible.
@@ -240,6 +241,23 @@ random model dropout can make a disc vanish for a few frames. The tracker (`Boar
 * **New game.** If **no disc at all** is detected for 5 consecutive seconds (`--reset-seconds`), the game is
   considered restarted: the board is cleared and `game_id` goes up by one.
 
+## 8a. Depth filter (RealSense only)
+
+With a RealSense the depth stream is aligned to the colour image and used in two ways:
+
+* **Only things in the board are discs.** At startup the board's front face is fitted as a plane from depth (the grid
+  area minus the holes). Every detected pixel that is further than `--depth-behind` behind that plane (a red/blue
+  poster, chair or wall seen through an empty hole) or further than `--depth-front` in front of it (a hand, arm or leg)
+  is discarded before the cells are classified.
+* **Consistent colours.** A SAM detection only counts if the cell really has that colour (red/blue hue check), and
+  where depth says a hole is physically filled, the hue alone counts as evidence. A frame where SAM misses a disc
+  therefore no longer loses it, and a dark hole that SAM mistakes for a disc is rejected.
+
+The startup message prints the fitted plane distance and fit error. If the plane cannot be fitted, or you use a
+video/webcam/stream, the depth filter is switched off and only SAM is used. The defaults (2.5 cm behind, 3 cm in front) come from a live test where the discs sat 0–1 cm behind the front
+face while a person's jeans behind the board were 3–10 cm behind it. If real discs get rejected, increase
+`--depth-behind`; the `d` key shows how filled each cell is.
+
 ## 9. Command line options
 
 | Option | Default | Description |
@@ -252,12 +270,15 @@ random model dropout can make a disc vanish for a few frames. The tracker (`Boar
 | `--calibration FILE` | `calibration.json` next to the script | Where the board corners are stored. |
 | `--recalibrate` | off | Ignore the saved corners and click new ones. |
 | `--red-prompt` | `red disc` | SAM 3 text prompt for red discs. |
-| `--blue-prompt` | `blue disc` | SAM 3 text prompt for blue discs. |
+| `--blue-prompt` | `blue disc, blue circle` | SAM 3 text prompt(s) for blue discs; a comma-separated list is combined (union). |
 | `--confidence` | `0.4` | SAM 3 detection threshold. |
 | `--min-coverage` | `0.5` | Fraction of a cell's centre a mask must cover to count. |
 | `--confirm-seconds` | `0.5` | How long a new disc must be seen before it is added. |
 | `--flip-seconds` | `5.0` | How long a different colour must persist before a settled disc flips. |
 | `--reset-seconds` | `5.0` | No discs detected for this long means a new game: clear the board. |
+| `--no-depth` | off | Do not use the RealSense depth stream (depth filter off). |
+| `--depth-behind` | `0.025` | Metres behind the board's front face that still count as a disc; anything further away (poster, wall) is rejected. |
+| `--depth-front` | `0.03` | Metres in front of the board's front face that still count as a disc; anything closer (hand, arm) is rejected. |
 | `--hide-masks` | off | Start with the mask overlay off (toggle with `m`). |
 | `--no-display` | off | No preview window. Needs an existing calibration file. |
 | `--host`, `--port` | `0.0.0.0`, `8000` | Address of the REST API. |
