@@ -109,3 +109,22 @@ html,body{width:100%;height:100%;overflow:hidden}body{height:100dvh}.screen-conn
 
 /* Confirmed human and robot discs fall into the observed board. */
 .board { overflow: hidden; }
+
+.instructor-view .control { overflow-y:auto; }
+#training-delay{width:100%;padding:6px;border:1px solid #d9d3e0;border-radius:6px;background:#fffefa;color:#252139}
+#model-benchmark{white-space:pre-line}
+
+#camera-delay{width:100%;padding:6px;border:1px solid #d9d3e0;border-radius:6px;background:#fffefa;color:#252139}
+
+/* Let training and connections use the full instructor column height. */
+@media(min-width:761px){
+  .instructor-view #training-panel{grid-column:2;grid-row:1/-1;height:100%;}
+  .instructor-view #admin>.control:first-child{grid-column:1;grid-row:1;}
+  .instructor-view #admin>.control:nth-child(3){grid-column:1;grid-row:2;}
+  .instructor-view #admin:has(#mock-control:not([hidden])){grid-template-rows:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);}
+  .instructor-view #mock-control{grid-column:1;grid-row:3;}
+}
+@media(max-width:760px){
+  .instructor-view #admin{overflow-y:auto;grid-template-rows:auto auto auto;}
+  .instructor-view #training-panel{min-height:420px;}
+}

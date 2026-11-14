@@ -428,6 +428,15 @@ def create_app(api_url=None, interval=None, result_delay=None, run_worker=False)
         except httpx.HTTPError as exc:
             raise HTTPException(502, f"Model API unavailable: {exc}") from exc
 
+    @app.get("/event/models")
+    def event_models():
+        return debug_forward("GET", "/model-catalog")
+
+    @app.post("/event/training")
+    def event_training(payload: dict):
+        # Instructor controls always address the single current learner.
+        return debug_forward("POST", "/debug/control", {**payload,"model_id":"shared"})
+
     @app.get("/debug/data")
     def debug_data(model: str = Query(default="shared", pattern=r"^[A-Za-z0-9_-]{1,64}$")):
         return debug_forward("GET", f"/debug/state/{model}")

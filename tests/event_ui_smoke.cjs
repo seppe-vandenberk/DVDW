@@ -3,6 +3,7 @@ const fs=require("node:fs"),vm=require("node:vm"),assert=require("node:assert/st
 class Element {
   constructor(){this.children=[];this.hidden=false;this.value="";this.style={setProperty(k,v){this[k]=v;}};this.dataset={};this.attributes={};this.events={};this.textContent="";this.classes=new Set();this.classList={add:x=>this.classes.add(x),remove:x=>this.classes.delete(x)};}
   animate(frames,options){(this.animations??=[]).push({frames,options});}
+  replaceChildren(){this.children=[];}
   append(x){this.children.push(x);}setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k];}
   addEventListener(k,v){this.events[k]=v;}querySelector(){return this.button??=new Element();}
 }
@@ -13,10 +14,13 @@ async function page(path){
   elements.get("manual-player").value="human";
   const document={body:new Element(),getElementById:id=>{assert(elements.has(id),id);return elements.get(id);},createElement:()=>new Element()};
   let state={setup:{robot_color:"B",first:"human",robot_character:"orbit",human_character:"astronaut"},board:Array.from({length:7},()=>Array(5).fill("X")),game_id:"stem-test",revision:1,status:"waiting",suggestion:null,thinking_until:0,next:"human",winner:null,move_count:0,camera:{ok:true,last_success:new Date().toISOString(),latency_ms:1},model:{ok:null},manual:false,camera_source:"mock"};
-  const calls=[],timers=[];
+  const calls=[],timers=[];let paused=false,delay=500;
   const sandbox={document,location:{pathname:path},Date,JSON,Number,Math,Array,Object,String,Boolean,AbortSignal,
     setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout:()=>{},
-    fetch:async(url,options={})=>{calls.push({url,options});return {ok:true,json:async()=>JSON.parse(JSON.stringify(state))};}};
+    fetch:async(url,options={})=>{calls.push({url,options});
+      if(url==="/event/models")return {ok:true,json:async()=>({models:[{id:"shared",label:"Live",playable:true},{id:"saved-"+"a".repeat(24),label:"Generation 1",playable:true,generation:1}],training:{pause_requested:paused,move_delay_ms:delay,games:20,phase:paused?"paused":"collecting experience"}})};
+      if(url==="/event/training"){let p=JSON.parse(options.body);if(p.action==="pause")paused=true;if(p.action==="resume")paused=false;if(p.action==="delay")delay=p.delay_ms;return {ok:true,json:async()=>({accepted:true})};}
+      return {ok:true,json:async()=>JSON.parse(JSON.stringify(state))};}};
   const context=vm.createContext(sandbox);vm.runInContext(fs.readFileSync("connect4/static/event.js","utf8"),context);
   await new Promise(r=>setImmediate(r));
   const render=s=>{state=s;context.input=s;vm.runInContext("render(input)",context);};
@@ -39,6 +43,20 @@ async function page(path){
   render({...state,revision:2,status:"waiting",suggestion:null,next:"human",manual:true});
   assert(!elements.get("slots").children[5].classes.has("active"));assert(elements.get("manual-status").textContent.includes("Manual takeover"));
   if(path==="/instructor"){
+    assert.equal(elements.get("opponent-model").children.length,2);
+    elements.get("camera-delay").value="1250";
+    await elements.get("apply-camera-delay").events.click();
+    assert(calls.some(c=>c.url==="/event/camera/settings"&&JSON.parse(c.options.body).delay_ms===1250));
+    render({...state,camera_poll_delay_ms:1250,manual:false});
+    assert(elements.get("source").textContent.includes("1250 ms"));
+    elements.get("training-delay").value="750";
+    await elements.get("apply-delay").events.click();
+    assert(calls.some(c=>c.url==="/event/training"&&JSON.parse(c.options.body).delay_ms===750));
+    await elements.get("training-toggle").events.click();
+    assert.equal(elements.get("training-toggle").textContent,"Resume training");
+    await elements.get("training-toggle").events.click();
+    assert.equal(elements.get("training-toggle").textContent,"Pause training");
+
     elements.get("size-editor").hidden=true;
     elements.get("size-toggle").events.click();
     assert.equal(elements.get("size-editor").hidden,false);

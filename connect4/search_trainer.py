@@ -11,18 +11,22 @@ from .az import Agent, ARCHITECTURE, search_many
 from .bitboard import Position
 from .learning import Worker, BENCHMARK
 from .game import outcome
+from .model_catalog import Catalog, FrozenAgent
 
 
 class SearchTrainer(Trainer):
     def __init__(self, model_dir, device="cpu"):
         super().__init__(model_dir, device)
         self.workers = {}
+        self.catalog = Catalog(self.model_dir)
         self.started = False
         self.background_enabled = True
 
     def agent(self, name):
+        if name not in self.agents and name.startswith("saved-"):
+            self.agents[name] = self.catalog.load(name, self.device, int(os.getenv("AI_SEARCH_SIMULATIONS", "64")))
         if name not in self.agents:
-            if len(self.agents) >= 4:
+            if len(self.workers) >= 4:
                 raise HTTPException(409, "At most four search models can be loaded")
             agent = Agent(self.model_dir / f"az-{name}.pt", device=self.device,
                           simulations=int(os.getenv("AI_SEARCH_SIMULATIONS", "64")))
@@ -31,7 +35,8 @@ class SearchTrainer(Trainer):
                             batch_games=int(os.getenv("AI_BATCH_GAMES", "16")),
                             simulations=int(os.getenv("AI_TRAIN_SIMULATIONS", "32")),
                             interval=float(os.getenv("AI_EVALUATION_SECONDS", "300")),
-                            gate_games=int(os.getenv("AI_GATE_GAMES", "40")))
+                            gate_games=int(os.getenv("AI_GATE_GAMES", "40")),
+                            move_delay=float(os.getenv("AI_TRAIN_MOVE_DELAY_SECONDS", "0.5")))
             self.workers[name] = worker
             if self.started and self.background_enabled:
                 worker.start()
@@ -95,6 +100,8 @@ class SearchTrainer(Trainer):
                     self.last_error = "Human experience queue full; episode was not learned"
 
     def move(self, request):
+        if request.model_id.startswith("saved-"):
+            request = request.model_copy(update={"train":False, "explore":False})
         with self.lock:
             previous = self.games.get(request.game_id)
             if previous and request.model_dump_json() in previous.responses:
@@ -108,13 +115,16 @@ class SearchTrainer(Trainer):
                 # A retry can arrive after the model published; keep its original policy.
                 session.search_policies.setdefault(request.player,
                     list(self.agent(request.model_id).last_policy))
-            result["architecture"] = ARCHITECTURE
-            result["replay_size"] = self.workers[request.model_id].status.get("replay_size", 0)
+            result["architecture"] = getattr(self.agent(request.model_id), "architecture", ARCHITECTURE)
+            result["replay_size"] = self.workers[request.model_id].status.get("replay_size", 0) if request.model_id in self.workers else 0
             return result
 
     def progress(self, name, force=False):
         with self.lock:
             agent = self.agent(name)
+            if name not in self.workers:
+                return {"model_id":name,"architecture":agent.architecture,"updates":agent.updates,
+                        "history":list(agent.evaluations),"diagnostics":agent.diagnostics(),"background":{},"read_only":True}
             worker = self.workers[name]
             if force:
                 worker.measure.set()
@@ -127,14 +137,16 @@ class SearchTrainer(Trainer):
                     "history": list(agent.evaluations), "background": worker.snapshot(),
                     "evaluation_pending": worker.measure.is_set(), "benchmark": BENCHMARK}
 
-    def control(self, name, action):
+    def control(self, name, action, delay_ms=None):
         with self.lock:
             if name not in self.workers:
                 raise HTTPException(404, "Model is not loaded")
             worker = self.workers[name]
             if not worker.thread.is_alive():
                 raise HTTPException(409, "Background learner is not running; check its error and restart the API")
-            if action == "pause":
+            if action == "delay":
+                worker.move_delay = delay_ms / 1000
+            elif action == "pause":
                 worker.paused.set()
             elif action == "resume":
                 worker.paused.clear()
@@ -144,7 +156,7 @@ class SearchTrainer(Trainer):
                 worker.checkpoint.set()
             worker.event("control", f"Operator requested {action}")
             return {"accepted": True, "action": action,
-                    "note": "Applied between batches; evaluation waits while learning is paused."}
+                    "note": "Pause and delay apply at training move boundaries; evaluation requests wait while paused."}
 
     def record_discard(self, game_id, session):
         if session.finished or not session.bindings:
@@ -157,6 +169,8 @@ class SearchTrainer(Trainer):
         with self.lock:
             if name not in self.agents:
                 raise HTTPException(404, "Model is not loaded; select an existing model")
+            if name not in self.workers:
+                raise HTTPException(409, "Saved model is read-only; inspect its catalog benchmark")
             agent, worker = self.agents[name], self.workers[name]
             sessions = [{"game_id": game_id, "created_at": s.created_at,
                          "age_seconds": time.time() - s.created_at, "finished": s.finished,

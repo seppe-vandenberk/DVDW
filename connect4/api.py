@@ -64,7 +64,8 @@ class InspectRequest(BaseModel):
 
 
 class DebugControlRequest(ModelRequest):
-    action: Literal["pause", "resume", "evaluate", "checkpoint"]
+    action: Literal["pause", "resume", "evaluate", "checkpoint", "delay"]
+    delay_ms: int = Field(default=500, strict=True, ge=0, le=60000)
 
 
 @dataclass
@@ -312,7 +313,7 @@ def create_app(model_dir=None, device=None, backend=None, background=None):
     def debug_control(request: DebugControlRequest):
         if backend != "az":
             raise HTTPException(409, "Debug console requires AI_BACKEND=az")
-        return trainer.control(request.model_id, request.action)
+        return trainer.control(request.model_id, request.action, request.delay_ms)
 
     @app.post("/debug/analyze")
     def analyze(request: InspectRequest):
@@ -339,6 +340,20 @@ def create_app(model_dir=None, device=None, backend=None, background=None):
             if backend == "az":
                 trainer.record_discard(game_id, session)
         return {"deleted": game_id}
+
+    @app.get("/model-catalog")
+    def model_catalog():
+        if backend != "az":
+            raise HTTPException(409, "Model catalog requires the search backend")
+        rows = trainer.catalog.scan()
+        with trainer.lock:
+            agent = trainer.agent("shared")
+            published = [p for p in agent.evaluations if p.get("updates") == agent.published_updates and p.get("promoted", True)]
+            rows.insert(0, {"id":"shared","label":"Current published model (live)","playable":True,
+                            "generation":agent.generation,"updates":agent.published_updates,
+                            "benchmark":published[-1] if published else None})
+            training = trainer.workers["shared"].snapshot()
+        return {"models":rows,"training":training,"training_model":"shared"}
 
     @app.get("/models")
     def models():

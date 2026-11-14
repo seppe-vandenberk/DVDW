@@ -227,6 +227,20 @@ class Agent:
                 "human_replay_size": len(self.human_memory), "last_saved_at": self.last_saved_at,
                 "checkpoint_error": self.checkpoint_error, "checkpoint_errors": self.checkpoint_errors}
 
+    def save_generation(self):
+        """Archive published weights once, never replacing an older generation."""
+        directory = self.path.parent / "published" / self.path.stem
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / f"generation-{self.generation:06d}-update-{self.published_updates}.pt"
+        if destination.exists():
+            return
+        original = self.path
+        try:
+            self.path = destination
+            self.save()
+        finally:
+            self.path = original
+
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(prefix=self.path.stem + "-", suffix=".tmp", dir=self.path.parent)

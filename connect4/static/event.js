@@ -48,6 +48,8 @@ function render(s) {
   const animatePlacement=unchangedDiscs&&additions.length>0&&additions.length<=2&&
     !(typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches);
   state=s;
+  if(document.activeElement!==$("camera-delay")&&!pending)$("camera-delay").value=s.camera_poll_delay_ms??500;
+  $("apply-camera-delay").disabled=pending;
   document.body.style.setProperty("--board-width-scale",(s.board_scale??100)/100);
   if(document.activeElement!==$("board-scale")) {
     $("board-scale").value=s.board_scale??100;
@@ -75,6 +77,7 @@ function render(s) {
   $("current-turn").textContent=turnText;
   $("current-turn").dataset.player=showResult?"finished":s.next;
   if(!initialized) {
+    $("opponent-model").value=s.setup.model_id??"shared";
     $("robot-color").value=robotColor;$("first").value=s.setup.first;
     $("robot-character").value=s.setup.robot_character;$("human-character").value=s.setup.human_character;
     initialized=true;colorHint();
@@ -113,7 +116,7 @@ function render(s) {
   $("count").textContent=`${s.move_count} / 35 discs`;
   $("turn").textContent=s.status==="finished"?"Spel afgelopen":s.next==="human"?"Jouw beurt":"Robots beurt";
   health("camera",s.camera);health("model",s.model);
-  $("source").textContent=`${s.camera_source==="mock"?"Mock camera":"External camera"} - ${s.manual?"Manual takeover active":"Observations every 2 seconds"}`;
+  $("source").textContent=`${s.camera_source==="mock"?"Mock camera":"External camera"} - ${s.manual?"Manual takeover active":`Observations every ${s.camera_poll_delay_ms??500} ms`}`;
   $("mock-control").hidden=s.camera_source!=="mock";
   $("manual-status").textContent=s.manual?"Manual takeover active. Resume camera when the physical board is ready.":"Camera is in control.";
   buttons.forEach((b,c)=>b.disabled=pending||s.status==="finished"||s.next!==$("manual-player").value||s.board[c][0]!=="X");
@@ -130,7 +133,8 @@ async function command(path,body={}) {
 function colorHint(){$("human-color").textContent=$("robot-color").value==="B"?"Human: Red (R)":"Human: Blue (B)";}
 $("robot-color").addEventListener("change",colorHint);
 $("manual-player").addEventListener("change",()=>state&&render(state));
-$("setup").addEventListener("submit",event=>{event.preventDefault();command("/event/new",{robot_color:$("robot-color").value,first:$("first").value,robot_character:$("robot-character").value,human_character:$("human-character").value});});
+$("setup").addEventListener("submit",event=>{event.preventDefault();command("/event/new",{model_id:$("opponent-model").value,robot_color:$("robot-color").value,first:$("first").value,robot_character:$("robot-character").value,human_character:$("human-character").value});});
+$("apply-camera-delay").addEventListener("click",()=>command("/event/camera/settings",{delay_ms:Number($("camera-delay").value)}));
 $("retry").addEventListener("click",()=>command("/event/retry"));
 $("preview-human").addEventListener("click",()=>command("/event/preview",{winner:"human"}));
 $("preview-robot").addEventListener("click",()=>command("/event/preview",{winner:"robot"}));
@@ -161,3 +165,47 @@ async function poll(){
   setTimeout(poll,500);
 }
 poll();if(instructor)loadMock();
+
+let modelChoices=[], trainingPaused=false, instructorBusy=false;
+function describeBenchmark() {
+  const m=modelChoices.find(m=>m.id===$("opponent-model").value);
+  if(!m){$("model-benchmark").textContent="No saved benchmark available.";return;}
+  const b=m.benchmark;
+  if(!b){$("model-benchmark").textContent="Not benchmarked yet. Playing strength is unknown.";return;}
+  const score=100*(b.score??0), level=score>=90?"Very strong against this opponent":score>=70?"Strong against this opponent":score>=50?"Competitive against this opponent":"Still learning against this opponent";
+  $("model-benchmark").textContent=`${level}. ${score.toFixed(1)}% score (win + half draw).\n${b.wins} wins / ${b.draws} draws / ${b.losses} losses in ${b.games} games against ${b.benchmark?.startsWith("rules")?"rules":"rules (search-v1)"}.\nMeasured at update ${b.updates}, ${new Date(b.timestamp*1000).toLocaleString()}. Generation ${m.generation??"legacy"}. These samples do not guarantee strength against people.`;
+}
+async function refreshInstructorModels() {
+  if(instructorBusy)return;
+  try {
+    const data=await api("/event/models");
+    const previous=modelChoices.find(m=>m.id===$("opponent-model").value);
+    modelChoices=data.models;
+    if(previous&&!modelChoices.some(m=>m.id===previous.id))modelChoices.push(previous);
+    const selected=$("opponent-model").value||state?.setup.model_id||"shared";
+    if(document.activeElement!==$("opponent-model")){
+      $("opponent-model").replaceChildren();
+      for(const m of modelChoices){const o=document.createElement("option");o.value=m.id;o.textContent=m.label+(m.generation!=null?` | gen ${m.generation}, update ${m.updates}`:"")+(m.playable?"":" (unsupported)");o.disabled=!m.playable;$("opponent-model").append(o);}
+      $("opponent-model").value=modelChoices.some(m=>m.id===selected)?selected:"shared";
+    }
+    const t=data.training;trainingPaused=t.pause_requested;
+    $("training-toggle").textContent=trainingPaused?"Resume training":"Pause training";
+    if(document.activeElement!==$("training-delay"))$("training-delay").value=t.move_delay_ms??500;
+    $("training-state").textContent=`${t.phase}. ${t.games} completed games. Delay ${t.move_delay_ms} ms per training move.${t.evaluation_requested?" Benchmark queued (waits for current batch and resume).":""}${t.error?" Error: "+t.error:""}`;
+    const b=t.last_evaluation;
+    $("training-benchmark").textContent=b?`Latest candidate: ${(100*b.score).toFixed(1)}% score against rules (${b.wins}W / ${b.draws}D / ${b.losses}L, ${b.games} games), update ${b.updates}, ${new Date(b.timestamp*1000).toLocaleString()}. ${b.promoted?"Published":"Not published"}.`:"No candidate benchmark yet; use Benchmark now or wait for the scheduled check.";
+    describeBenchmark();
+  }catch(error){$("training-state").textContent=error.message;}
+}
+async function controlTraining(payload){
+  if(instructorBusy)return;instructorBusy=true;
+  try{await api("/event/training",payload);}catch(error){$("error").textContent=error.message;$("error").hidden=false;}
+  finally{instructorBusy=false;await refreshInstructorModels();}
+}
+if(instructor){
+  $("opponent-model").addEventListener("change",describeBenchmark);
+  $("apply-delay").addEventListener("click",()=>controlTraining({action:"delay",delay_ms:Number($("training-delay").value)}));
+  $("training-toggle").addEventListener("click",()=>controlTraining({action:trainingPaused?"resume":"pause"}));
+  $("training-evaluate").addEventListener("click",()=>controlTraining({action:"evaluate"}));
+  async function pollInstructor(){await refreshInstructorModels();setTimeout(pollInstructor,5000);}pollInstructor();
+}

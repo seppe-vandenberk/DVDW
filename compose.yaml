@@ -13,11 +13,14 @@ services:
       AI_BACKGROUND: ${AI_BACKGROUND:-true}
       AI_SEARCH_SIMULATIONS: ${AI_SEARCH_SIMULATIONS:-64}
       AI_TRAIN_SIMULATIONS: ${AI_TRAIN_SIMULATIONS:-32}
+      AI_TRAIN_MOVE_DELAY_SECONDS: ${AI_TRAIN_MOVE_DELAY_SECONDS:-0.5}
+      REPO_MODEL_RUNTIME: /app/repo-runtime
       AI_BATCH_GAMES: ${AI_BATCH_GAMES:-16}
       AI_EVALUATION_SECONDS: ${AI_EVALUATION_SECONDS:-300}
       AI_GATE_GAMES: ${AI_GATE_GAMES:-40}
     volumes:
       - ./models:/app/models
+      - ./runtime:/app/repo-runtime:ro
     restart: unless-stopped
     stop_grace_period: 45s
     healthcheck:
@@ -41,6 +44,7 @@ services:
     environment:
       API_URL: http://api:8000
       CAMERA_API_URL: ${CAMERA_API_URL:-}
+      CAMERA_POLL_DELAY_MS: ${CAMERA_POLL_DELAY_MS:-500}
       EVENT_SCORE_FILE: /app/event-data/robot_scores.txt
       MODEL_ONE: ${MODEL_ONE:-shared}
       MODEL_TWO: ${MODEL_TWO:-rules}

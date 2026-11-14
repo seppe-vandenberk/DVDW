@@ -20,6 +20,7 @@ def stamp():
 
 class Setup(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(default="shared", pattern=r"^(shared|saved-[a-f0-9]{24})$")
     robot_color: Literal["B", "R"] = "B"
     first: Literal["human", "robot"] = "human"
     robot_character: Literal["orbit", "spark", "pixel"] = "orbit"
@@ -38,6 +39,11 @@ class BoardSize(BaseModel):
     scale: StrictInt = Field(ge=50, le=175)
 
 
+class CameraSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    delay_ms: StrictInt = Field(ge=100, le=60000)
+
+
 class ResultPreview(BaseModel):
     winner: Literal["human", "robot"] | None = None
 
@@ -54,6 +60,9 @@ class EventGame:
     def __init__(self, api_url, score_file=None):
         self.api_url = api_url
         self.camera_url = os.getenv("CAMERA_API_URL", "")
+        self.camera_poll_delay_ms = int(os.getenv("CAMERA_POLL_DELAY_MS", "500"))
+        CameraSettings(delay_ms=self.camera_poll_delay_ms)
+        self.camera_schedule_changed = Event()
         self.lock = RLock()
         self.stop = Event()
         self.setup = Setup()
@@ -126,7 +135,8 @@ class EventGame:
                 "score_history": self.score_history,
                 "robot_score": self.score_history[-1]["score"],
                 "camera": self.camera, "model": self.model, "manual": self.override,
-                "camera_source": "external" if self.camera_url else "mock"})
+                "camera_source": "external" if self.camera_url else "mock",
+                "camera_poll_delay_ms": self.camera_poll_delay_ms})
 
     def mock_frame(self):
         with self.lock:
@@ -233,14 +243,14 @@ class EventGame:
         count = sum(v != 0 for col in self.board for v in col)
         self.thinking_until = time.time() + 1 + 2 * count / 34
         Thread(target=self.compute, args=(self.generation, self.session, deepcopy(self.board),
-               self.player_number("robot"), self.thinking_until), daemon=True).start()
+               self.player_number("robot"), self.thinking_until, self.setup.model_id), daemon=True).start()
 
-    def compute(self, generation, session, board, player, deadline):
+    def compute(self, generation, session, board, player, deadline, model_id=None):
         start = time.monotonic()
         try:
             with httpx.Client(base_url=self.api_url, timeout=20) as client:
                 response = client.post("/move", json={"game_id": session, "board": board, "player": player,
-                    "model_id": "shared", "train": True, "explore": False})
+                    "model_id": model_id or self.setup.model_id, "train": (model_id or self.setup.model_id) == "shared", "explore": False})
                 response.raise_for_status()
                 data = response.json()
             column = data["column"]
@@ -334,9 +344,26 @@ class EventGame:
             while not self.stop.is_set():
                 started = time.monotonic()
                 self.poll_camera()
-                self.stop.wait(max(0, 2 - (time.monotonic() - started)))
+                self.wait_for_camera_poll(started)
         self.thread = Thread(target=run, name="stem-camera", daemon=True)
         self.thread.start()
+
+    def set_camera_settings(self, settings):
+        with self.lock:
+            self.camera_poll_delay_ms = settings.delay_ms
+        self.camera_schedule_changed.set()
+        return self.snapshot()
+
+    def wait_for_camera_poll(self, started):
+        # Recalculate an in-progress wait when the operator changes the interval.
+        # Slow requests complete before another starts; no overlapping pollers.
+        while not self.stop.is_set():
+            with self.lock:
+                remaining = self.camera_poll_delay_ms / 1000 - (time.monotonic() - started)
+            if remaining <= 0:
+                return
+            self.camera_schedule_changed.wait(min(remaining, 0.2))
+            self.camera_schedule_changed.clear()
 
 
 def install_event_routes(app, game, static):
@@ -355,6 +382,10 @@ def install_event_routes(app, game, static):
     @app.get("/event/camera/mock")
     def camera():
         return game.mock_frame()
+
+    @app.post("/event/camera/settings")
+    def camera_settings(settings: CameraSettings):
+        return game.set_camera_settings(settings)
 
     @app.post("/event/camera/mock")
     def set_camera(frame: CameraFrame):

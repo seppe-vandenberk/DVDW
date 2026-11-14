@@ -249,3 +249,39 @@ def test_board_size_is_shared_and_survives_new_game(monkeypatch, tmp_path):
         assert client.post("/event/new", json={}).json()["board_scale"] == 125
         for value in (49, 176, 100.5, True):
             assert client.post("/event/size", json={"scale":value}).status_code == 422
+
+
+def test_camera_interval_is_validated_and_survives_new_game(monkeypatch, tmp_path):
+    from connect4.simulation_service import create_app
+    monkeypatch.setenv('EVENT_SCORE_FILE', str(tmp_path / 'scores.txt'))
+    monkeypatch.setenv('CAMERA_POLL_DELAY_MS', '500')
+    monkeypatch.setattr(EventGame, 'start', lambda self: None)
+    with TestClient(create_app()) as client:
+        before = client.get('/event/state').json()
+        assert before['camera_poll_delay_ms'] == 500
+        changed = client.post('/event/camera/settings', json={'delay_ms':1250}).json()
+        assert changed['camera_poll_delay_ms'] == 1250
+        assert changed['board'] == before['board']
+        assert changed['revision'] == before['revision']
+        assert client.post('/event/new', json={}).json()['camera_poll_delay_ms'] == 1250
+        for invalid in (0, 99, 60001, True, 500.5, '500'):
+            assert client.post('/event/camera/settings', json={'delay_ms':invalid}).status_code == 422
+
+
+def test_shorter_camera_interval_wakes_existing_wait(game):
+    import time
+    from threading import Thread, Event
+    from connect4.event_game import CameraSettings
+    game.set_camera_settings(CameraSettings(delay_ms=60000))
+    game.camera_schedule_changed.clear()
+    done = Event()
+    thread = Thread(target=lambda: (game.wait_for_camera_poll(time.monotonic() - .2), done.set()))
+    thread.start()
+    try:
+        assert not done.wait(.1)
+        game.set_camera_settings(CameraSettings(delay_ms=100))
+        assert done.wait(.5)
+    finally:
+        game.stop.set()
+        game.camera_schedule_changed.set()
+        thread.join(1)

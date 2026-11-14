@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 BENCHMARK = "search-v1"
 
 
-def generate(agent, games=16, simulations=32, history=(), stop=None, on_position=None):
+def generate(agent, games=16, simulations=32, history=(), stop=None, on_position=None, before_move=None):
     """Play a mixture of complete games; no rule labels enter training."""
     rng = agent.rng
     pool = history or [agent.online]
@@ -53,6 +53,8 @@ def generate(agent, games=16, simulations=32, history=(), stop=None, on_position
                     agent.decisions += 1
         pending = []
         for state in states:
+            if before_move and not before_move():
+                return completed
             state["board"] = drop(state["board"], state["action"], state["player"])
             state["ply"] += 1
             winner = outcome(state["board"])
@@ -114,12 +116,13 @@ def match(model, opponent, device, games=20, simulations=32, seed=91027, stop=No
 
 class Worker:
     def __init__(self, serving, lock, batch_games=16, simulations=32, interval=300,
-                 gate_games=40):
-        if min(batch_games, simulations, gate_games) < 1 or interval <= 0:
+                 gate_games=40, move_delay=0.5):
+        if min(batch_games, simulations, gate_games) < 1 or interval <= 0 or not 0 <= move_delay <= 60:
             raise ValueError("Background training settings must be positive")
         self.serving, self.lock = serving, lock
         self.batch_games, self.simulations = batch_games, simulations
         self.interval, self.gate_games = interval, gate_games
+        self.move_delay = move_delay
         self.stop = Event()
         self.paused = Event()
         self.measure = Event()
@@ -145,7 +148,7 @@ class Worker:
         with self.lock:
             return {**deepcopy(self.status), "queue_size": self.incoming.qsize(),
                     "pause_requested": self.paused.is_set(), "evaluation_requested": self.measure.is_set(),
-                    "checkpoint_requested": self.checkpoint.is_set()}
+                    "checkpoint_requested": self.checkpoint.is_set(), "move_delay_ms": round(self.move_delay * 1000)}
 
     def debug_snapshot(self):
         with self.lock:
@@ -172,6 +175,23 @@ class Worker:
         self.event("experience", "Confirmed external episode queued", positions=len(records), winner=winner,
                    game_id=game_id)
 
+    def wait_before_move(self):
+        elapsed = 0.0
+        while not self.stop.is_set():
+            if self.paused.is_set():
+                self.phase("paused")
+                if self.checkpoint.is_set() and hasattr(self, "candidate"):
+                    self.save_candidate(self.candidate)
+                self.stop.wait(0.05)
+                continue
+            self.phase("collecting experience")
+            if elapsed >= self.move_delay:
+                return True
+            started = time.monotonic()
+            self.stop.wait(min(0.05, self.move_delay - elapsed))
+            elapsed += time.monotonic() - started
+        return False
+
     def run(self):
         try:
             self._run()
@@ -191,6 +211,8 @@ class Worker:
                           simulations=self.simulations)
         if not candidate.path.exists():
             candidate.online.load_state_dict(serving.online.state_dict())
+        self.candidate = candidate
+        serving.save_generation()
         history = deque([deepcopy(serving.online).eval()], maxlen=4)
         last_check = last_save = time.monotonic()
         with self.lock:
@@ -243,7 +265,7 @@ class Worker:
                         self.status["external_positions"] += len(records)
                     self.event("experience", "External episode added to replay", positions=len(records))
                 results = generate(candidate, self.batch_games, self.simulations, history, self.stop,
-                                   on_position=show_position)
+                                   on_position=show_position, before_move=self.wait_before_move)
                 if self.stop.is_set():
                     break
                 # A bounded number of updates per fresh batch limits replay overfitting.
@@ -312,6 +334,8 @@ class Worker:
                     try:
                         with self.lock:
                             serving.save()
+                            if promoted:
+                                serving.save_generation()
                     except OSError as exc:
                         self.event("error", f"Published checkpoint failed: {exc}")
                     last_check = time.monotonic()

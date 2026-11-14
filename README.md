@@ -4,6 +4,102 @@ A STEM-day demonstration of learning through repetition and rewards, on a **7-co
 
 Background learning continues during browser and physical human games. The home page is a focused Play screen using the same design and navigation as the operator console. Training observation, candidate benchmark scores, publication results, and a sampled live background-training board live in the debug console.
 
+## STEM-day quick start (Windows host camera + Docker)
+
+Run these commands from the repository root. Docker Desktop must be running;
+the RealSense is connected to the host. The camera needs its own Python 3.12
+CUDA/SAM 3 environment and approved Hugging Face access; see
+[camera installation](camera/README.md#3-install-on-windows). The commands below
+use the existing environment on this workstation. Keep the camera terminal open.
+
+**Terminal 1 - local detection and OpenCV preview:**
+
+```powershell
+$cameraPython = ".\runtime\realsense-bridge-py312\Scripts\python.exe"
+$env:HF_HOME = "$PWD/runtime/hf-local"
+$env:OMP_NUM_THREADS = "1"
+$env:MKL_NUM_THREADS = "1"
+& $cameraPython camera/connect4_reader.py --rows 5 --fps 15 --host 127.0.0.1 --port 8002 --calibration runtime/camera/calibration.json
+```
+
+To select the board corners again, stop the camera with **Ctrl+C** and repeat
+that command with `--recalibrate`. Click top left, top right, bottom right,
+bottom left. Press **m** to toggle SAM masks, **d** for depth fill readings,
+and **q** to stop the camera. Keep the physical board empty during setup.
+The saved calibration, Hugging Face cache and virtual environment are local
+artifacts; a fresh clone needs installation and authentication first.
+
+**Terminal 2 - AI API, background learner and interface:**
+
+In `.env` (copy `.env.example` only if `.env` does not exist), set:
+
+```dotenv
+CAMERA_API_URL=http://host.docker.internal:8002/state
+AI_BACKEND=az
+AI_BACKGROUND=true
+AI_TRAIN_MOVE_DELAY_SECONDS=0.5
+CAMERA_POLL_DELAY_MS=500
+```
+
+```powershell
+docker compose up --build -d
+docker compose ps
+docker compose logs -f api simulator
+```
+
+The instructor **Camera API interval (ms)** setter changes polling immediately
+for both event displays (100-60,000 ms), independently of training and screen
+refresh. It survives **Start new game**. A restart uses `CAMERA_POLL_DELAY_MS`
+from `.env`. An in-flight request completes before the next poll.
+
+**Event screens and API endpoints:**
+
+| Purpose | Address / endpoint |
+|---|---|
+| Participant screen | http://localhost:8080/participant |
+| Instructor: start games, select model, adjust move delay, pause/resume learning | http://localhost:8080/instructor |
+| Browser-only Play game | http://localhost:8080/ |
+| Training diagnostics | http://localhost:8080/debug |
+| Viewer health | http://localhost:8080/health |
+| Change camera polling interval | `POST http://localhost:8080/event/camera/settings` with `{ "delay_ms":500 }` |
+| Shared physical game state | `GET http://localhost:8080/event/state` |
+| Saved models, published generations and recorded benchmark results | `GET http://localhost:8080/event/models` |
+| Training controls | `POST http://localhost:8080/event/training` |
+| Local camera board | `GET http://localhost:8002/state` |
+| AI health | http://localhost:8000/health |
+| AI API documentation | http://localhost:8000/docs |
+| Move / confirm result | `POST http://localhost:8000/move`, `POST /finish` |
+| Model catalog / progress | `GET http://localhost:8000/model-catalog`, `GET /models/shared/progress` |
+| Save current serving weights and request learner checkpoint | `POST http://localhost:8000/checkpoint` |
+
+Training controls accept `{ "action":"pause" }`, `{ "action":"resume" }`,
+`{ "action":"delay", "delay_ms":500 }`, or `{ "action":"evaluate" }`.
+The controls always affect the current `shared` learner, independently of which
+saved opponent is selected. Pause applies at a training move boundary; ordinary
+moves in physical/browser games remain available. Evaluation requests wait while
+paused. Move delays range from 0 to 60,000 ms and can be changed during a game.
+Delays/pause are runtime controls; the startup delay comes from the environment.
+
+In the instructor view, select an opponent and press **Start new game** to apply
+it. The selected model remains bound to that game. `shared` follows current
+published weights; saved checkpoints/generations are inference snapshots and do
+not train or overwrite themselves. New publications are archived under
+`models/published/<model>/generation-<number>-update-<number>.pt`; older generations
+from before this feature cannot be reconstructed. Existing checkpoints in
+`models/` and AI checkpoints in `runtime/` are discovered automatically. Unsupported
+architectures/corrupt files appear disabled. Runtime package/test caches and SAM detector checkpoints are excluded from discovery.
+
+Benchmarks show wins/draws/losses, score (win + half draw), sample size, opponent,
+and measurement time/update. They describe recorded tests, not guaranteed human
+playing strength. The selected published model and the latest training candidate
+can have different scores; a candidate must pass the publication gate before it
+becomes the live opponent. **Benchmark now** queues the current learner's next
+check and does not replace an archived model's historical measurements.
+
+To stop: `docker compose down`, then **Ctrl+C** in the camera terminal. Use
+`docker compose -f compose.yaml -f compose.gpu.yaml up --build -d` only if you also
+want the learner on the GPU; the local SAM 3 detector already uses the GPU.
+
 ## Install
 
 The repository has two parts with **separate environments**; install only what you need.
@@ -171,7 +267,7 @@ Open `/participant` on the participant screen and `/instructor` on the instructo
 
 The instructor selects a robot character, a human character, the robot's blue (`B`) or red (`R`) discs, and who starts. The other color is assigned to the human. Start new game applies these selections and clears the shared event game. Character selections are decorative; player numbers are assigned by turn order for the existing model API. The original browser Play game remains at `/`.
 
-One server-owned loop reads the camera every two seconds, independently of open browser tabs. Blank `CAMERA_API_URL` selects the shared mock camera, exposed at `GET /event/camera/mock`. The instructor can load/edit/send its response. This is row-major: five rows of seven `X`, `B`, or `R` cells, plus `game_id`, an ISO-8601 `timestamp`, and `valid`. The mock endpoint refreshes the timestamp when read; the editor refreshes it when sending. Set `CAMERA_API_URL` to the camera reader's endpoint when ready (see [Camera reader](#camera-reader-camera) below) (also passed through Docker Compose). External timestamps must be within ten seconds of server time; invalid, stale, floating, and impossible boards are rejected and reported.
+One server-owned loop reads the camera at the configured interval (500 ms by default), independently of open browser tabs. Blank `CAMERA_API_URL` selects the shared mock camera, exposed at `GET /event/camera/mock`. The instructor can load/edit/send its response. This is row-major: five rows of seven `X`, `B`, or `R` cells, plus `game_id`, an ISO-8601 `timestamp`, and `valid`. The mock endpoint refreshes the timestamp when read; the editor refreshes it when sending. Set `CAMERA_API_URL` to the camera reader's endpoint when ready (see [Camera reader](#camera-reader-camera) below) (also passed through Docker Compose). External timestamps must be within ten seconds of server time; invalid, stale, floating, and impossible boards are rejected and reported.
 
 A changed, valid board starts a model request only on the robot's turn. Timestamps alone never trigger another request or restart its animation. The robot thinks for a minimum of one second, rising linearly to three seconds as the board fills, and longer if inference is still running. It carries a disc to the selected slot, then lights that slot. This is a placement instruction: a suggested disc is never silently added to the observed board, and no hardware command is sent. Confirm the robot disc and human reply through camera observations.
 

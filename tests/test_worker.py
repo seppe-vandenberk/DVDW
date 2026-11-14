@@ -17,7 +17,7 @@ def test_worker_trains_publishes_and_persists_human_outcomes(tmp_path, monkeypat
                 "second": {"wins": 1, "draws": 0, "losses": 1}}}
     monkeypatch.setattr("connect4.learning.match", tournament)
     serving = Agent(tmp_path / "az-shared.pt", device="cpu", simulations=2)
-    worker = Worker(serving, RLock(), batch_games=8, simulations=2, interval=0.01, gate_games=4)
+    worker = Worker(serving, RLock(), batch_games=8, simulations=2, interval=0.01, gate_games=4, move_delay=0)
     worker.submit([(empty_board(), [0, 0, 0, 1, 0, 0, 0], 1, 0)], 1, 6)
     worker.start()
     deadline = time.monotonic() + 15
@@ -41,7 +41,7 @@ def test_failed_promotion_keeps_published_weights(tmp_path, monkeypatch):
         {"games": 4, "wins": 0, "draws": 0, "losses": 4, "score": 0.0, "win_rate": 0.0})
     serving = Agent(tmp_path / "az-shared.pt", device="cpu", simulations=2)
     before = {k: v.clone() for k, v in serving.online.state_dict().items()}
-    worker = Worker(serving, RLock(), batch_games=8, simulations=2, interval=0.01, gate_games=4)
+    worker = Worker(serving, RLock(), batch_games=8, simulations=2, interval=0.01, gate_games=4, move_delay=0)
     worker.start()
     deadline = time.monotonic() + 15
     try:
@@ -58,7 +58,7 @@ def test_pause_preserves_weights_and_checkpoint_works_while_paused(tmp_path, mon
     torch.set_num_threads(1)
     serving = Agent(tmp_path / "az-paused.pt", device="cpu", simulations=2)
     serving.evaluations.append({"stage": "baseline", "updates": 0, "timestamp": time.time(), "promoted": True})
-    worker = Worker(serving, RLock(), batch_games=4, simulations=2)
+    worker = Worker(serving, RLock(), batch_games=4, simulations=2, move_delay=0)
     worker.paused.set()
     worker.start()
     deadline = time.monotonic() + 10
